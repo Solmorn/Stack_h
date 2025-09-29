@@ -2,12 +2,29 @@
 #include <stdio.h>
 #include <assert.h>
 
+#include "stack.h"
 
-Stack_Err_t StackCtor(Stack_t* stk, size_t capacity_got, BirthInfo* info_got) {
 
-    if (capacity_got < 128) capacity_got = 128;
+Stack_Err_t StackCtor(StackInfo* stk, size_t capacity_got, BirthInfo* info_got) {
 
-    stk->data = (int*)calloc(capacity_got, sizeof(int));
+    assert(stk);
+    #ifdef _DEBUG//
+    assert(info_got);
+    #endif
+
+    if (capacity_got < 0) return CapacityError;
+    if (capacity_got < 10) capacity_got = 10;
+
+    stack_type* calloc_ptr = (stack_type*)calloc(capacity_got + 2, sizeof(stack_type));
+    if (calloc_ptr == nullptr) return AllocationError;
+
+    stk->data = calloc_ptr + 1;
+    (stk->canary_p).canary1 = calloc_ptr;
+    (stk->canary_p).canary2 = calloc_ptr + capacity_got + 1;
+
+    *((stk->canary_p).canary1) = stk->canary_v;
+    *((stk->canary_p).canary2) = stk->canary_v;
+
     stk->size = 0;
     stk->capacity = capacity_got;
     stk->info = info_got;
@@ -17,27 +34,38 @@ Stack_Err_t StackCtor(Stack_t* stk, size_t capacity_got, BirthInfo* info_got) {
     return Ok;
 }
 
-Stack_Err_t StackPush(Stack_t* stk, int element) {
+Stack_Err_t StackPush(StackInfo* stk, stack_type element) {
+
+    #ifdef _DEBUG
+    ASSERT_OK(stk);
+    #endif
 
     if (stk->size == stk->capacity) {
+
         stk->capacity *= 2;
-        stk->data = (int*)realloc(stk->data, stk->capacity);
+
+        stack_type* realloc_ptr = (stack_type*)realloc((stk->canary_p).canary1, (stk->capacity + 2) * sizeof(stack_type));
+        if (realloc_ptr == nullptr) return AllocationError;
+
+        stk->data = realloc_ptr + 1;
+        (stk->canary_p).canary1 = realloc_ptr;
+        (stk->canary_p).canary2 = realloc_ptr + stk->capacity + 1;
     }
 
+    FillPoison(stk);
     stk->data[(stk->size)++] = element;
 
     return Ok;
 
 }
 
-Stack_Err_t StackPop(Stack_t* stk) {
+Stack_Err_t StackPop(StackInfo* stk) {
 
-    if (stk->size == 0) return Error;
+    #ifdef _DEBUG
+    ASSERT_OK(stk);
+    #endif
 
-    if (stk->size * 4 < stk->capacity) {
-        stk->capacity /= 2;
-        stk->data = (int*)realloc(stk->data, stk->capacity);
-    }
+    if (stk->size == 0) return PopSizeStackError;
 
     stk->data[(stk->size)-- - 1] = stk->poison;
 
@@ -45,13 +73,18 @@ Stack_Err_t StackPop(Stack_t* stk) {
 
 }
 
-Stack_Err_t StkErr(Stack_t* stk) {
+Stack_Err_t StkErr(StackInfo* stk) {
+
+    assert(stk);
 
     return Ok;
 
 }
 
-void StkDump(Stack_t* stk) {
+void StkDump(StackInfo* stk) {
+
+    assert(stk);
+
     BirthInfo* info_got = stk->info;
     printf("=====INIT_INFO=====\nFILE: %s /-----/ FUCK: %s /-----/ LINE: %d /-----/ NAME: %s\n\n",
                                 info_got->file, info_got->func, info_got->line, info_got->name);
@@ -60,33 +93,51 @@ void StkDump(Stack_t* stk) {
     printf("    size     = %d\n", stk->size);
     printf("    capacity = %d\n", stk->capacity);
     printf("    poison   = %d\n", stk->poison);
+    printf("    canary   = %x\n", stk->canary_v);
     printf("    data[%p] {\n", stk->data);
+    printf("         [canary] = %x\n", *((stk->canary_p).canary1));
 
     for (size_t index = 0; index < stk->capacity; index++) {
 
-        char* is_poison = "";
-        char* is_filled = "*";
+        const char* is_poison = "";
+        const char* is_filled = "*";
+
         if (index >= stk->size) is_filled = " ";
 
-        int element = (stk->data)[index];
+        stack_type element = (stk->data)[index];
         if (element == stk->poison) is_poison = "(poison)";
 
          printf("        %s [%u] = %d %s\n", is_filled, index, element, is_poison);
     }
 
+    printf("         [canary] = %x\n", *((stk->canary_p).canary2));
+
     printf("    }\n}\n\n");
 }
 
-void StkDtor(Stack_t* stk) {
+void StkDtor(StackInfo* stk) {
 
-    free(stk);
+    #ifdef _DEBUG
+    ASSERT_OK(stk);
+    #endif
+
+    free((stk->canary_p).canary1);
 
 }
 
-void FillPoison(Stack_t* stk) {
+void FillPoison(StackInfo* stk) {
 
-    for (size_t index = 0; index < stk->capacity; index++) {
+    #ifdef _DEBUG
+    ASSERT_OK(stk);
+    #endif
+
+    for (size_t index = stk->size; index < stk->capacity; index++) {
         (stk->data)[index] = stk->poison;
     }
+
+}
+
+uint64_t CountHash(StackInfo* stk) {
+    uint64_t hash =
 
 }
