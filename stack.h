@@ -5,6 +5,7 @@
 static const size_t MAX_SIZE_VALUE = 0x00011A6AAD;
 
 #define HASH_ON
+#define CANARY_ON
 
 #ifndef STACK_H
 #define STACK_H
@@ -70,7 +71,7 @@ struct StackInfo {
     #ifdef _DEBUG
     BirthInfo* info           = nullptr;
     stack_type poison         = 0x00000D1127;
-    Canary_p   data_canary_p  = {};
+    Canary_p   data_canary_p  = {};//
     stack_type data_canary_v  = 0x00FA7B112D;
     stack_type stack_canary_v = 0x00FA7B012D;
     error_code errors_bit     = 0;
