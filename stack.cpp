@@ -4,57 +4,54 @@
 
 #include "stack.h"
 
+#ifdef _DEBUG
+static void FillCanary(StackInfo* stk, stack_type* calloc_ptr, size_t capacity);
+static void FillPoison(StackInfo* stk);
+#endif
 
+static stack_type* AllocateStack(StackInfo* stk, size_t capacity_got) {
 
+    #ifdef CANARY_ON
+    capacity_got += 2;
+    stack_type* realloc_ptr = (stack_type*)realloc(stk->data_canary_p.data_canary1, capacity_got * sizeof(stack_type));
+    #else
+    stack_type* realloc_ptr = (stack_type*)realloc(stk->data                      , capacity_got * sizeof(stack_type));
+    #endif //canary
+
+    if (realloc_ptr == nullptr) return nullptr;
+
+    stk->capacity = capacity_got;
+
+    #ifdef CANARY_ON
+    stk->data = realloc_ptr + 1;
+    FillCanary(stk, realloc_ptr, capacity_got);
+    #else
+    stk->data = realloc_ptr;
+    #endif //canary
+
+    #ifdef _DEBUG
+    FillPoison(stk);
+    #endif
+
+    return realloc_ptr;
+
+}
 
 error_code StackCtor(StackInfo* stk, size_t capacity_got, BirthInfo* info_got = nullptr) {
 
     assert(stk);
 
     if (capacity_got > MAX_SIZE_VALUE) return CapacityError;
-    if (capacity_got <  10) capacity_got = 10;//
-
-    #ifdef _DEBUG
-
-    stk->info = info_got;
-
-    #ifdef CANARY_ON
-
-    stack_type* calloc_ptr = (stack_type*)calloc(capacity_got + 2, sizeof(stack_type));
-    if (calloc_ptr == nullptr) return AllocationError;
-
-    stk->data = calloc_ptr + 1;
-    (stk->data_canary_p).data_canary1 = calloc_ptr;
-    (stk->data_canary_p).data_canary2 = calloc_ptr + capacity_got + 1;
-
-    *((stk->data_canary_p).data_canary1) = DATA_CANARY;
-    *((stk->data_canary_p).data_canary2) = DATA_CANARY;
-
-    #else //canary
-
-    stack_type* calloc_ptr = (stack_type*)calloc(capacity_got, sizeof(stack_type));
-    if (calloc_ptr == nullptr) return AllocationError;
-
-    stk->data = calloc_ptr;
-
-    #endif //canary
-
-
-    #else //debug
-
-    stack_type* calloc_ptr = (stack_type*)calloc(capacity_got, sizeof(stack_type));
-    if (calloc_ptr == nullptr) return AllocationError;
-
-    stk->data = calloc_ptr;
-
-    #endif //debug
+    if (capacity_got < MIN_SIZE_VALUE) capacity_got = MIN_SIZE_VALUE;
 
     stk->size = 0;
-    stk->capacity = capacity_got;
 
     #ifdef _DEBUG
-    FillPoison(stk);
-    #endif
+    stk->info = info_got;
+    #endif //debug
+
+    stack_type* calloc_ptr = AllocateStack(stk, capacity_got);
+    if (calloc_ptr == nullptr) return AllocationError;
 
     #ifdef HASH_ON
     stk->hash_value = CalculateDataHash(stk);
@@ -63,6 +60,7 @@ error_code StackCtor(StackInfo* stk, size_t capacity_got, BirthInfo* info_got = 
     ASSERT_OK(stk);
 
     return Ok;
+
 }
 
 error_code StackPush(StackInfo* stk, stack_type element) {
@@ -70,22 +68,17 @@ error_code StackPush(StackInfo* stk, stack_type element) {
     ASSERT_OK(stk);
 
     if (stk->size == stk->capacity) {
-        error_code code = ExpandStack(stk);
-        if (code) return code;
+        stack_type* realloc_ptr = AllocateStack(stk, stk->capacity * STACK_EXPAND_VALUE);
+        if (realloc_ptr == nullptr) return AllocationError;
     }
 
     stk->data[(stk->size)++] = element;
-
-    #ifdef _DEBUG
-    FillPoison(stk);
-    #endif
 
     #ifdef HASH_ON
     stk->hash_value = CalculateDataHash(stk);
     #endif
 
     ASSERT_OK(stk);
-
 
     return Ok;
 
@@ -124,33 +117,19 @@ error_code StkDtor(StackInfo* stk) {
 
 }
 
-static error_code ExpandStack(StackInfo* stk) {//
+#ifdef _DEBUG //for debug funcs
 
-    ASSERT_OK(stk);
+#ifdef CANARY_ON
+static void FillCanary(StackInfo* stk, stack_type* calloc_ptr, size_t capacity) {
 
-    stk->capacity *= STACK_EXPAND_VALUE;
+    (stk->data_canary_p).data_canary1 = calloc_ptr;
+    (stk->data_canary_p).data_canary2 = calloc_ptr + capacity + 1;
 
-    #ifdef CANARY_ON
-    stack_type* realloc_ptr = (stack_type*)realloc((stk->data_canary_p).data_canary1, (stk->capacity + 2) * sizeof(stack_type));
-    if (realloc_ptr == nullptr) return AllocationError;//
-
-    stk->data = realloc_ptr + 1;
-    (stk->data_canary_p).data_canary1 = realloc_ptr;
-    (stk->data_canary_p).data_canary2 = realloc_ptr + stk->capacity + 1;
-
-    #else
-
-    stack_type* realloc_ptr = (stack_type*)realloc(stk->data, stk->capacity * sizeof(stack_type));
-    if (realloc_ptr == nullptr) return AllocationError;
-    stk->data = realloc_ptr;
-
-    #endif
-
-    ASSERT_OK(stk);
+    *((stk->data_canary_p).data_canary1) = DATA_CANARY;
+    *((stk->data_canary_p).data_canary2) = DATA_CANARY;
 
 }
-
-#ifdef _DEBUG //for debug funcs
+#endif //canary
 error_code StkErr(StackInfo* stk) {
 
     assert(stk);

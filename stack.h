@@ -7,8 +7,8 @@
 //read about bite operators (done)
 //global constants (done)
 
-//#define HASH_ON
-//#define CANARY_ON
+#define HASH_ON
+#define CANARY_ON
 
 #ifndef STACK_H
 #define STACK_H
@@ -17,6 +17,7 @@ typedef int stack_type;
 typedef int error_code;
 
 static const size_t     MAX_SIZE_VALUE     = 0x00011A6AAD;
+static const size_t     MIN_SIZE_VALUE     =           10;
 static const stack_type POISON             = 0x00000D1127;
 static const size_t     STACK_EXPAND_VALUE =            2;
 static const stack_type STACK_CANARY       = 0x00FA7B012D;
@@ -90,9 +91,9 @@ struct StackInfo {
     stack_type stack_canary1  = STACK_CANARY;
     #endif
 
-    stack_type* data          = 0;
-    size_t     size           = 0;
-    size_t     capacity       = 0;
+    stack_type*  data          = nullptr;
+    size_t       size          = 0;
+    size_t       capacity      = 0;
 
     #ifdef _DEBUG
     BirthInfo* info           = nullptr;
