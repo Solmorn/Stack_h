@@ -7,21 +7,14 @@
 
 
 
-error_code StackCtor(StackInfo* stk, size_t capacity_got, ...) {
+error_code StackCtor(StackInfo* stk, size_t capacity_got, BirthInfo* info_got = nullptr) {
 
-    va_list args;
-    va_start(args, capacity_got);
-
+    assert(stk);
 
     if (capacity_got > MAX_SIZE_VALUE) return CapacityError;
     if (capacity_got <  10) capacity_got = 10;//
 
     #ifdef _DEBUG
-
-    BirthInfo* info_got = va_arg(args, BirthInfo*);
-
-    assert(stk);
-    assert(info_got);
 
     stk->info = info_got;
 
@@ -31,11 +24,11 @@ error_code StackCtor(StackInfo* stk, size_t capacity_got, ...) {
     if (calloc_ptr == nullptr) return AllocationError;
 
     stk->data = calloc_ptr + 1;
-    (stk->data_canary_p).canary1 = calloc_ptr;
-    (stk->data_canary_p).canary2 = calloc_ptr + capacity_got + 1;
+    (stk->data_canary_p).data_canary1 = calloc_ptr;
+    (stk->data_canary_p).data_canary2 = calloc_ptr + capacity_got + 1;
 
-    *((stk->data_canary_p).canary1) = stk->data_canary_v;
-    *((stk->data_canary_p).canary2) = stk->data_canary_v;
+    *((stk->data_canary_p).data_canary1) = DATA_CANARY;
+    *((stk->data_canary_p).data_canary2) = DATA_CANARY;
 
     #else //canary
 
@@ -46,7 +39,6 @@ error_code StackCtor(StackInfo* stk, size_t capacity_got, ...) {
 
     #endif //canary
 
-    va_end(args);
 
     #else //debug
 
@@ -65,7 +57,7 @@ error_code StackCtor(StackInfo* stk, size_t capacity_got, ...) {
     #endif
 
     #ifdef HASH_ON
-    stk->hash_value = CountHash(stk);
+    stk->hash_value = CalculateDataHash(stk);
     #endif
 
     ASSERT_OK(stk);
@@ -78,26 +70,8 @@ error_code StackPush(StackInfo* stk, stack_type element) {
     ASSERT_OK(stk);
 
     if (stk->size == stk->capacity) {
-
-        stk->capacity *= 2;
-
-        #ifdef CANARY_ON
-
-        stack_type* realloc_ptr = (stack_type*)realloc((stk->data_canary_p).canary1, (stk->capacity + 2) * sizeof(stack_type));
-        if (realloc_ptr == nullptr) return AllocationError;//
-
-        stk->data = realloc_ptr + 1;
-        (stk->data_canary_p).canary1 = realloc_ptr;
-        (stk->data_canary_p).canary2 = realloc_ptr + stk->capacity + 1;
-
-        #else
-
-        stack_type* realloc_ptr = (stack_type*)realloc(stk->data, stk->capacity * sizeof(stack_type));
-        if (realloc_ptr == nullptr) return AllocationError;
-
-        stk->data = realloc_ptr;
-
-        #endif
+        error_code code = ExpandStack(stk);
+        if (code) return code;
     }
 
     stk->data[(stk->size)++] = element;
@@ -107,7 +81,7 @@ error_code StackPush(StackInfo* stk, stack_type element) {
     #endif
 
     #ifdef HASH_ON
-    stk->hash_value = CountHash(stk);
+    stk->hash_value = CalculateDataHash(stk);
     #endif
 
     ASSERT_OK(stk);
@@ -124,10 +98,10 @@ error_code StackPop(StackInfo* stk, stack_type* element) {
     if (stk->size == 0) return PopSizeStackError;
 
     *element = stk->data[(stk->size) - 1];
-    stk->data[(stk->size)-- - 1] = stk->poison;
+    stk->data[--(stk->size)] = POISON;
 
     #ifdef HASH_ON
-    stk->hash_value = CountHash(stk);
+    stk->hash_value = CalculateDataHash(stk);
     #endif
 
     ASSERT_OK(stk);
@@ -136,18 +110,47 @@ error_code StackPop(StackInfo* stk, stack_type* element) {
 
 }
 
-void ASSERT_OK(StackInfo* stk) {
+error_code StkDtor(StackInfo* stk) {
 
-    #ifdef _DEBUG
-    if (StkErr(stk) != 0) {
-        StkDump(stk);
-        printf("ASSERTION FAILED");
-        abort();
-    }
-    #endif
+    ASSERT_OK(stk);
+
+    #ifdef CANARY_ON
+    free((stk->data_canary_p).data_canary1);
+    #else
+    free(stk->data);
+    #endif //canary
+
+    return Ok;
 
 }
 
+static error_code ExpandStack(StackInfo* stk) {//
+
+    ASSERT_OK(stk);
+
+    stk->capacity *= STACK_EXPAND_VALUE;
+
+    #ifdef CANARY_ON
+    stack_type* realloc_ptr = (stack_type*)realloc((stk->data_canary_p).data_canary1, (stk->capacity + 2) * sizeof(stack_type));
+    if (realloc_ptr == nullptr) return AllocationError;//
+
+    stk->data = realloc_ptr + 1;
+    (stk->data_canary_p).data_canary1 = realloc_ptr;
+    (stk->data_canary_p).data_canary2 = realloc_ptr + stk->capacity + 1;
+
+    #else
+
+    stack_type* realloc_ptr = (stack_type*)realloc(stk->data, stk->capacity * sizeof(stack_type));
+    if (realloc_ptr == nullptr) return AllocationError;
+    stk->data = realloc_ptr;
+
+    #endif
+
+    ASSERT_OK(stk);
+
+}
+
+#ifdef _DEBUG //for debug funcs
 error_code StkErr(StackInfo* stk) {
 
     assert(stk);
@@ -155,7 +158,7 @@ error_code StkErr(StackInfo* stk) {
     error_code code = 0;
 
     #ifdef CANARY_ON
-    if (stk->stack_canary1 != stk->stack_canary_v || stk->stack_canary2 != stk->stack_canary_v) {
+    if (stk->stack_canary1 != STACK_CANARY || stk->stack_canary2 != STACK_CANARY) {
                                 code |= StackCanaryError;
         stk->errors_bit = code;
         return code;
@@ -180,34 +183,34 @@ error_code StkErr(StackInfo* stk) {
         check_poison_allowed = false;
     }
 
-    if (stk->data == nullptr) {//
+    if (stk->data == nullptr) {
                                 code |= NullptrDataError;
         stk->errors_bit = code;
         return code;
     }
 
     for (size_t index = 0; check_data_allowed && index < stk->size; index++) {
-        if ((stk->data)[index] == stk->poison) {
+        if ((stk->data)[index] == POISON) {
                                 code |= PoisonDataError;
             break;
         }
     }
 
     for (size_t index = stk->size; check_poison_allowed && index < stk->capacity; index++) {
-        if ((stk->data)[index] != stk->poison) {
+        if ((stk->data)[index] != POISON) {
                                 code |= PoisonFillingError;
             break;
         }
     }
 
     #ifdef CANARY_ON
-    if (*((stk->data_canary_p).canary1) != stk->data_canary_v || *((stk->data_canary_p).canary2) != stk->data_canary_v) {
+    if (*((stk->data_canary_p).data_canary1) != DATA_CANARY || *((stk->data_canary_p).data_canary2) != DATA_CANARY) {
                                 code |= DataCanaryError;
     }
     #endif
 
     #ifdef HASH_ON
-    if (check_data_allowed && (stk->hash_value != CountHash(stk))) {
+    if (check_data_allowed && (stk->hash_value != CalculateDataHash(stk))) {
                                 code |= HashError;
     }
     #endif
@@ -235,11 +238,11 @@ void StkDump(StackInfo* stk) {
     printf("    size          = %lu\t%s\n", stk->size,      ContainsError(stk->errors_bit, SizeError) ||
                                                             ContainsError(stk->errors_bit, SizeMoreThanCapacityError)  ? "(BAD!)" : "");
     printf("    capacity      = %lu\t%s\n", stk->capacity,  ContainsError(stk->errors_bit, CapacityError)              ? "(BAD!)" : "");
-    printf("    poison        = %d\n", stk->poison);
+    printf("    poison        = %d\n", POISON);
 
     #ifdef CANARY_ON
-    printf("    data_canary   = %x\n", stk->data_canary_v);
-    printf("    stack_canary  = %x\n", stk->data_canary_v);
+    printf("    data_canary   = %x\n", DATA_CANARY);
+    printf("    stack_canary  = %x\n", STACK_CANARY);
     #endif //canary
 
     #ifdef HASH_ON
@@ -251,7 +254,7 @@ void StkDump(StackInfo* stk) {
     if (!(ContainsError(stk->errors_bit, NullptrDataError) || ContainsError(stk->errors_bit, CapacityError))) {
 
         #ifdef CANARY_ON
-        printf(" {\n         [canary] = %x\t%s\n", *((stk->data_canary_p).canary1),
+        printf(" {\n         [canary] = %x\t%s\n", *((stk->data_canary_p).data_canary1),
                                                        ContainsError(stk->errors_bit, DataCanaryError)            ? "(BAD!)" : "");
         #endif
 
@@ -260,11 +263,11 @@ void StkDump(StackInfo* stk) {
             const char* is_filled = "*";
             if (index >= stk->size) is_filled = " ";
             stack_type element = (stk->data)[index];
-            if (element == stk->poison) is_poison = "(poison)";
+            if (element == POISON) is_poison = "(poison)";
              printf("        %s [%lu] = %d %s\n", is_filled, index, element, is_poison);
         }
         #ifdef CANARY_ON
-        printf("         [canary] = %x\t%s", *((stk->data_canary_p).canary2),
+        printf("         [canary] = %x\t%s", *((stk->data_canary_p).data_canary2),
                                                       ContainsError(stk->errors_bit, DataCanaryError)             ? "(BAD!)" : "");
         #endif
         printf("\n    }");
@@ -276,27 +279,15 @@ void StkDump(StackInfo* stk) {
     printf("\n}\n\n");
 }
 
-void StkDtor(StackInfo* stk) {
-
-    ASSERT_OK(stk);
-
-    #ifdef _DEBUG
-    free((stk->data_canary_p).canary1);
-    #else
-    free(stk->data);
-    #endif
-
-}
-
-void FillPoison(StackInfo* stk) {
+static void FillPoison(StackInfo* stk) {
 
     for (size_t index = stk->size; index < stk->capacity; index++) {
-        (stk->data)[index] = stk->poison;
+        (stk->data)[index] = POISON;
     }
 
 }
 
-uint64_t CountHash(StackInfo* stk) {
+uint64_t CalculateDataHash(StackInfo* stk) {
 
     assert(stk);
 
@@ -312,4 +303,4 @@ uint64_t CountHash(StackInfo* stk) {
 bool ContainsError(error_code code, Stack_Err_t err) {
     return err & code;
 }
-
+#endif // for debug func
